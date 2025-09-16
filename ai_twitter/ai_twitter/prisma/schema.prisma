@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [vector, pg_trgm]
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  username    String   @unique @db.VarChar(30)
+  displayName String   @db.VarChar(50)
+  bio         String?  @db.VarChar(500)
+  avatarUrl   String?
+  isActive    Boolean  @default(true)
+  preferences Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts        Post[]
+  sentMessages     Message[] @relation("UserSentMessages")
+  receivedMessages Message[] @relation("UserReceivedMessages")
+  settings     Setting[]
+  interactions Interaction[]
+
+  @@map("users")
+}
+
+model Persona {
+  id              String  @id @default(cuid())
+  name            String  @db.VarChar(50)
+  username        String  @unique @db.VarChar(30)
+  bio             String  @db.VarChar(500)
+  avatarUrl       String?
+  personality     Json
+  postingStyle    Json
+  relationships   Json?
+  activityPattern Json
+  isActive        Boolean @default(true)
+  archetype       String
+  riskLevel       Float   @db.DoublePrecision
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  posts            Post[]
+  sentMessages     Message[] @relation("PersonaSentMessages")
+  receivedMessages Message[] @relation("PersonaReceivedMessages")
+  interactions     Interaction[]
+  memories         PersonaMemory[]
+
+  @@map("personas")
+}
+
+model Post {
+  id               String            @id @default(cuid())
+  authorId         String
+  authorType       AuthorType
+  content          String            @db.VarChar(2000)
+  parentId         String?
+  quotedPostId     String?
+  threadId         String
+  generationSource Json?
+  toneSettings     Json?
+  isRepost         Boolean           @default(false)
+  originalPostId   String?
+  visibility       PostVisibility    @default(PUBLIC)
+  engagementCount  Json              @default("{}")
+  contentEmbedding Unsupported("vector(1536)")?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  author       User?     @relation(fields: [authorId], references: [id], map: "post_user_author") 
+  persona      Persona?  @relation(fields: [authorId], references: [id], map: "post_persona_author")
+  parent       Post?     @relation("PostReplies", fields: [parentId], references: [id])
+  replies      Post[]    @relation("PostReplies")
+  quotedPost   Post?     @relation("PostQuotes", fields: [quotedPostId], references: [id])
+  quotes       Post[]    @relation("PostQuotes")
+  originalPost Post?     @relation("PostReposts", fields: [originalPostId], references: [id])
+  reposts      Post[]    @relation("PostReposts")
+  interactions Interaction[]
+
+  @@index([threadId])
+  @@index([authorId, authorType])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model Message {
+  id               String      @id @default(cuid())
+  threadId         String
+  senderId         String
+  senderType       AuthorType
+  receiverId       String
+  receiverType     AuthorType
+  content          String      @db.VarChar(2000)
+  isRead           Boolean     @default(false)
+  readAt           DateTime?
+  generationSource Json?
+  createdAt        DateTime    @default(now())
+
+  senderUser     User?     @relation("UserSentMessages", fields: [senderId], references: [id], map: "message_sender_user_fkey")
+  receiverUser   User?     @relation("UserReceivedMessages", fields: [receiverId], references: [id], map: "message_receiver_user_fkey")
+  senderPersona  Persona?  @relation("PersonaSentMessages", fields: [senderId], references: [id], map: "message_sender_persona_fkey")
+  receiverPersona Persona? @relation("PersonaReceivedMessages", fields: [receiverId], references: [id], map: "message_receiver_persona_fkey")
+
+  @@index([threadId])
+  @@index([senderId, senderType])
+  @@index([receiverId, receiverType])
+  @@map("messages")
+}
+
+model Trend {
+  id          String    @id @default(cuid())
+  topic       String    @db.VarChar(200)
+  description String?   @db.VarChar(1000)
+  velocity    Float     @db.DoublePrecision
+  sources     Json
+  categories  String[]
+  region      String?
+  confidence  Float     @db.DoublePrecision
+  peakAt      DateTime?
+  expiresAt   DateTime
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isActive, expiresAt])
+  @@index([velocity])
+  @@map("trends")
+}
+
+model NewsItem {
+  id              String    @id @default(cuid())
+  title           String    @db.VarChar(300)
+  content         String?   @db.VarChar(5000)
+  url             String    @unique
+  source          String
+  author          String?
+  publishedAt     DateTime
+  categories      String[]
+  sentiment       Float?    @db.DoublePrecision
+  embedding       Unsupported("vector(1536)")?
+  isProcessed     Boolean   @default(false)
+  processingNotes Json?
+  createdAt       DateTime  @default(now())
+
+  @@index([source, publishedAt])
+  @@index([isProcessed])
+  @@map("news_items")
+}
+
+model Setting {
+  id          String   @id @default(cuid())
+  userId      String
+  category    String
+  key         String
+  value       Json
+  isEncrypted Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, key])
+  @@map("settings")
+}
+
+model Interaction {
+  id              String          @id @default(cuid())
+  userId          String
+  targetId        String
+  targetType      TargetType
+  interactionType InteractionType
+  metadata        Json?
+  sessionId       String?
+  createdAt       DateTime        @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post    Post?    @relation(fields: [targetId], references: [id], map: "interaction_target_post_fkey")
+  persona Persona? @relation(fields: [targetId], references: [id], map: "interaction_target_persona_fkey")
+
+  @@index([userId, targetType])
+  @@index([targetId, targetType])
+  @@map("interactions")
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        String
+  status      JobStatus @default(PENDING)
+  priority    Int       @default(5) @db.SmallInt
+  payload     Json
+  result      Json?
+  error       Json?
+  retryCount  Int       @default(0) @db.SmallInt
+  maxRetries  Int       @default(3) @db.SmallInt
+  scheduledAt DateTime
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([status, scheduledAt])
+  @@index([type, priority])
+  @@map("jobs")
+}
+
+enum AuthorType {
+  USER
+  PERSONA
+}
+
+enum PostVisibility {
+  PUBLIC
+  DRAFT
+}
+
+enum TargetType {
+  POST
+  PERSONA
+  MESSAGE
+}
+
+enum InteractionType {
+  LIKE
+  REPOST
+  REPLY
+  VIEW
+  CLICK
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model PersonaMemory {
+  id           String    @id @default(cuid())
+  personaId    String    @map("persona_id")
+  type         String
+  summary      String
+  details      Json
+  strength     Float
+  lastAccessed DateTime  @map("last_accessed")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  associations Json
+  embedding    Unsupported("vector(1536)")?
+
+  persona      Persona   @relation(fields: [personaId], references: [id], onDelete: Cascade, map: "persona_memory_persona_fkey")
+
+  @@index([personaId, type])
+  @@index([personaId, lastAccessed])
+  @@index([embedding], type: Hnsw)
+  @@map("persona_memories")
+}
