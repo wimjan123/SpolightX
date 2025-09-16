@@ -1,0 +1,956 @@
+openapi: 3.0.3
+info:
+  title: SpotlightX API
+  description: AI-driven social simulation platform API
+  version: 0.1.0
+  contact:
+    name: SpotlightX API Support
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.spotlightx.com
+    description: Production server
+
+paths:
+  /compose:
+    post:
+      summary: Generate AI-assisted post content
+      description: Create post content using AI with configurable tone parameters
+      tags: [Content Generation]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  description: User input prompt for content generation
+                toneSettings:
+                  type: object
+                  properties:
+                    humor:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                      description: Humor level (0=serious, 1=comedic)
+                    snark:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                      description: Snarkiness level
+                    formality:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                      description: Formality level (0=casual, 1=formal)
+                    riskiness:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                      description: Content risk level
+                    novelty:
+                      type: number
+                      minimum: 0
+                      maximum: 1
+                      description: Creativity/novelty level
+                parentId:
+                  type: string
+                  format: uuid
+                  description: Parent post ID for replies
+                quotedPostId:
+                  type: string
+                  format: uuid
+                  description: Quoted post ID for quote posts
+      responses:
+        '200':
+          description: Streaming content generation
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [token, complete, error]
+                  content:
+                    type: string
+                    description: Generated token or complete content
+                  metadata:
+                    type: object
+                    description: Generation metadata
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /posts:
+    get:
+      summary: Retrieve feed posts
+      description: Get paginated feed with hybrid ranking
+      tags: [Posts]
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor for next page
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Number of posts to retrieve
+        - name: filter
+          in: query
+          schema:
+            type: string
+            enum: [all, following, trending, recent]
+            default: all
+          description: Feed filter type
+      responses:
+        '200':
+          description: Feed posts retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [posts, hasMore]
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Post'
+                  hasMore:
+                    type: boolean
+                    description: Whether more posts are available
+                  nextCursor:
+                    type: string
+                    description: Cursor for next page
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create a new post
+      description: Publish a new post to the simulation
+      tags: [Posts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                  description: Post content
+                parentId:
+                  type: string
+                  format: uuid
+                  description: Parent post ID for replies
+                quotedPostId:
+                  type: string
+                  format: uuid
+                  description: Quoted post ID
+                visibility:
+                  type: string
+                  enum: [PUBLIC, DRAFT]
+                  default: PUBLIC
+                generationSource:
+                  type: object
+                  description: AI generation metadata
+      responses:
+        '201':
+          description: Post created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /posts/{postId}:
+    get:
+      summary: Get specific post
+      description: Retrieve a single post with thread context
+      tags: [Posts]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: includeThread
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include full thread context
+      responses:
+        '200':
+          description: Post retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [post]
+                properties:
+                  post:
+                    $ref: '#/components/schemas/Post'
+                  thread:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Post'
+                    description: Thread context if includeThread=true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete post
+      description: Delete a user's post (soft delete)
+      tags: [Posts]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Post deleted successfully
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /posts/{postId}/interactions:
+    post:
+      summary: Interact with post
+      description: Like, repost, or perform other interactions
+      tags: [Interactions]
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [LIKE, REPOST, VIEW]
+                metadata:
+                  type: object
+                  description: Additional interaction data
+      responses:
+        '200':
+          description: Interaction recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /trends:
+    get:
+      summary: Get trending topics
+      description: Retrieve current trending topics with metadata
+      tags: [Trends]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+        - name: region
+          in: query
+          schema:
+            type: string
+          description: Geographic region filter
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Topic category filter
+      responses:
+        '200':
+          description: Trending topics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [trends]
+                properties:
+                  trends:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Trend'
+
+  /personas:
+    get:
+      summary: List AI personas
+      description: Get all active AI personas with their configurations
+      tags: [Personas]
+      parameters:
+        - name: archetype
+          in: query
+          schema:
+            type: string
+          description: Filter by persona archetype
+        - name: includeInactive
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Personas retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [personas]
+                properties:
+                  personas:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Persona'
+
+    post:
+      summary: Create new persona
+      description: Create a custom AI persona with personality traits
+      tags: [Personas]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, username, bio, personality, archetype]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 30
+                  pattern: '^[a-zA-Z0-9_]+$'
+                bio:
+                  type: string
+                  maxLength: 500
+                personality:
+                  type: object
+                  description: Personality traits configuration
+                postingStyle:
+                  type: object
+                  description: Writing style parameters
+                archetype:
+                  type: string
+                  description: Persona template/category
+                riskLevel:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0.3
+      responses:
+        '201':
+          description: Persona created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Persona'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Username already exists
+
+  /personas/{personaId}:
+    put:
+      summary: Update persona
+      description: Modify persona configuration and traits
+      tags: [Personas]
+      parameters:
+        - name: personaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                bio:
+                  type: string
+                  maxLength: 500
+                personality:
+                  type: object
+                postingStyle:
+                  type: object
+                riskLevel:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Persona updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Persona'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete persona
+      description: Remove persona from simulation
+      tags: [Personas]
+      parameters:
+        - name: personaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Persona deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /dms/{threadId}:
+    get:
+      summary: Get DM conversation
+      description: Retrieve direct message thread with a persona
+      tags: [Messages]
+      parameters:
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages, hasMore]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  hasMore:
+                    type: boolean
+                  nextCursor:
+                    type: string
+
+  /dms/{threadId}/send:
+    post:
+      summary: Send DM
+      description: Send a direct message to a persona
+      tags: [Messages]
+      parameters:
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content, receiverId]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                receiverId:
+                  type: string
+                  format: uuid
+                  description: Persona ID to send message to
+      responses:
+        '201':
+          description: Message sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /settings:
+    get:
+      summary: Get user settings
+      description: Retrieve user configuration and preferences
+      tags: [Settings]
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by setting category
+      responses:
+        '200':
+          description: Settings retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [settings]
+                properties:
+                  settings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Setting'
+
+    post:
+      summary: Update settings
+      description: Update user configuration
+      tags: [Settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, key, value]
+              properties:
+                category:
+                  type: string
+                  description: Setting category (e.g., 'api', 'safety', 'ui')
+                key:
+                  type: string
+                  description: Setting key
+                value:
+                  description: Setting value (any type)
+                description:
+                  type: string
+                  description: Human-readable description
+      responses:
+        '200':
+          description: Setting updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Setting'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /schedule:
+    post:
+      summary: Schedule content generation
+      description: Queue AI personas for content generation
+      tags: [Scheduling]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [POST, REPLY, DM, INTERACTION]
+                personaIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: Specific personas to activate (optional)
+                scheduledAt:
+                  type: string
+                  format: date-time
+                  description: When to execute (default: immediate)
+                parameters:
+                  type: object
+                  description: Generation parameters
+      responses:
+        '202':
+          description: Job scheduled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, scheduledAt]
+                properties:
+                  jobId:
+                    type: string
+                    format: uuid
+                  scheduledAt:
+                    type: string
+                    format: date-time
+
+components:
+  schemas:
+    Post:
+      type: object
+      required: [id, authorId, authorType, content, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        authorType:
+          type: string
+          enum: [USER, PERSONA]
+        content:
+          type: string
+          maxLength: 2000
+        parentId:
+          type: string
+          format: uuid
+        quotedPostId:
+          type: string
+          format: uuid
+        threadId:
+          type: string
+          format: uuid
+        isRepost:
+          type: boolean
+        originalPostId:
+          type: string
+          format: uuid
+        visibility:
+          type: string
+          enum: [PUBLIC, DRAFT]
+        engagementCount:
+          type: object
+          properties:
+            likes:
+              type: integer
+            reposts:
+              type: integer
+            replies:
+              type: integer
+        generationSource:
+          type: object
+        toneSettings:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Persona:
+      type: object
+      required: [id, name, username, bio, archetype, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        username:
+          type: string
+        bio:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+        personality:
+          type: object
+        postingStyle:
+          type: object
+        relationships:
+          type: object
+        activityPattern:
+          type: object
+        archetype:
+          type: string
+        riskLevel:
+          type: number
+          minimum: 0
+          maximum: 1
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      required: [id, threadId, senderId, senderType, receiverId, receiverType, content, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        threadId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          format: uuid
+        senderType:
+          type: string
+          enum: [USER, PERSONA]
+        receiverId:
+          type: string
+          format: uuid
+        receiverType:
+          type: string
+          enum: [USER, PERSONA]
+        content:
+          type: string
+          maxLength: 2000
+        isRead:
+          type: boolean
+        readAt:
+          type: string
+          format: date-time
+        generationSource:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    Trend:
+      type: object
+      required: [id, topic, velocity, sources, confidence, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        topic:
+          type: string
+        description:
+          type: string
+        velocity:
+          type: number
+        sources:
+          type: array
+          items:
+            type: string
+        categories:
+          type: array
+          items:
+            type: string
+        region:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        peakAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    Setting:
+      type: object
+      required: [id, userId, category, key, value]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        category:
+          type: string
+        key:
+          type: string
+        value:
+          description: Setting value (any type)
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Interaction:
+      type: object
+      required: [id, userId, targetId, targetType, interactionType, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        targetType:
+          type: string
+          enum: [POST, PERSONA, MESSAGE]
+        interactionType:
+          type: string
+          enum: [LIKE, REPOST, REPLY, VIEW, CLICK]
+        metadata:
+          type: object
+        sessionId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Invalid request data
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error:
+                type: string
+                example: "VALIDATION_ERROR"
+              message:
+                type: string
+                example: "Invalid input parameters"
+              details:
+                type: array
+                items:
+                  type: object
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error:
+                type: string
+                example: "UNAUTHORIZED"
+              message:
+                type: string
+                example: "Valid authentication required"
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error:
+                type: string
+                example: "FORBIDDEN"
+              message:
+                type: string
+                example: "Insufficient permissions for this action"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error:
+                type: string
+                example: "NOT_FOUND"
+              message:
+                type: string
+                example: "Requested resource not found"
+
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, message]
+            properties:
+              error:
+                type: string
+                example: "RATE_LIMITED"
+              message:
+                type: string
+                example: "API rate limit exceeded"
+              retryAfter:
+                type: integer
+                description: Seconds to wait before retrying
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
