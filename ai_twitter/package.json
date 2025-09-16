@@ -1,0 +1,63 @@
+{
+  "name": "spotlightx",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build --turbopack",
+    "start": "next start",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "type-check": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "workers": "node src/workers/index.js"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.1",
+    "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@tanstack/react-query": "^5.87.4",
+    "@trpc/client": "^11.5.1",
+    "@trpc/next": "^11.5.1",
+    "@trpc/react-query": "^11.5.1",
+    "@trpc/server": "^11.5.1",
+    "@types/ioredis": "^4.28.10",
+    "bullmq": "^5.58.5",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "ioredis": "^5.7.0",
+    "lucide-react": "^0.544.0",
+    "next": "15.5.3",
+    "openai": "^5.20.3",
+    "prisma": "^6.16.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "redis": "^5.8.2",
+    "rss-parser": "^3.13.0",
+    "superjson": "^2.2.2",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20.19.15",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.3",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.5",
+    "tw-animate-css": "^1.3.8",
+    "typescript": "^5"
+  }
+}
