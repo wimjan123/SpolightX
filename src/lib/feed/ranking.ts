@@ -898,6 +898,60 @@ export class HybridFeedRanker {
 // Export the singleton
 export const feedRanker = HybridFeedRanker
 
+// Create FeedRanking wrapper for backwards compatibility with social router
+export class FeedRanking {
+  static async generateFeed(
+    userId: string,
+    options: {
+      filters?: {
+        visibility?: string[]
+        contentTypes?: string[]
+      }
+      pagination?: {
+        limit?: number
+        cursor?: string
+      }
+      feedType?: string
+    }
+  ) {
+    // Convert options to HybridFeedRanker format
+    const config: Partial<FeedConfiguration> = {
+      finalFeedSize: options.pagination?.limit || 20,
+      algorithm: options.feedType === 'following' ? 'following_only' : 
+                 options.feedType === 'trending' ? 'trending' : 'hybrid'
+    }
+
+    // Generate feed using HybridFeedRanker
+    const rankedPosts = await HybridFeedRanker.generateFeed(userId, config)
+
+    // Convert to expected format for social router
+    return rankedPosts.map(post => ({
+      contentId: post.postId,
+      timestamp: post.createdAt,
+      metrics: {
+        likes: post.engagementCount.likes,
+        reposts: post.engagementCount.reposts,
+        replies: post.engagementCount.replies,
+        views: post.engagementCount.views,
+      },
+      metadata: {
+        authorId: post.authorId,
+        authorType: post.authorType.toUpperCase(),
+        content: post.content,
+        parentId: post.parentId,
+        quotedPostId: undefined, // Would need to be added to ContentCandidate
+        threadId: post.threadId,
+        isRepost: false, // Would need to be determined
+        originalPostId: undefined,
+        visibility: 'PUBLIC', // Default, would need filtering logic
+        generationSource: undefined,
+        toneSettings: undefined,
+        updatedAt: post.createdAt, // Default to createdAt
+      }
+    }))
+  }
+}
+
 // Extend Prisma schema for feed feedback (this would go in schema.prisma)
 /*
 model FeedFeedback {

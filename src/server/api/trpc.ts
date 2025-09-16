@@ -1,9 +1,14 @@
-import { initTRPC } from '@trpc/server';
+import { initTRPC, TRPCError } from '@trpc/server';
 import { type NextRequest } from 'next/server';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
+import { observable } from '@trpc/server/observable';
+import { EventEmitter } from 'events';
+
+// Event emitter for real-time updates
+export const eventEmitter = new EventEmitter();
 
 export const createTRPCContext = async (opts: { req: NextRequest }) => {
   // Extract user session from headers/cookies if needed
@@ -15,6 +20,7 @@ export const createTRPCContext = async (opts: { req: NextRequest }) => {
     redis,
     session,
     userId: session?.userId,
+    eventEmitter,
   };
 };
 
@@ -59,13 +65,26 @@ export const publicProcedure = t.procedure;
 // Protected procedure that requires authentication
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.session?.userId) {
-    throw new Error('UNAUTHORIZED');
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'You must be logged in to access this resource',
+    });
   }
   return next({
     ctx: {
       ...ctx,
       session: ctx.session,
       userId: ctx.session.userId,
+    },
+  });
+});
+
+// Subscription procedure for real-time updates
+export const subscriptionProcedure = t.procedure.use(async ({ ctx, next }) => {
+  return next({
+    ctx: {
+      ...ctx,
+      eventEmitter: ctx.eventEmitter,
     },
   });
 });

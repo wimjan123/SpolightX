@@ -620,6 +620,44 @@ export class ContentModerationPipeline {
 // Export the singleton for easy usage
 export const contentModerator = ContentModerationPipeline
 
+// Wrapper class for backwards compatibility with social router
+export class ContentSafetyModeration {
+  static async moderateContent(
+    content: string,
+    options: {
+      userId: string
+      contentType: string
+      parentId?: string
+    }
+  ) {
+    // Generate content ID if not provided
+    const contentId = `content_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    // Call the main moderation pipeline
+    const result = await ContentModerationPipeline.moderateContent(
+      content,
+      contentId,
+      options.contentType.toLowerCase() as ContentType,
+      options.userId
+    )
+    
+    // Convert to expected format for social router
+    return {
+      action: result.decision === 'blocked' ? 'BLOCK' : 'ALLOW',
+      reason: result.reasons.join(', '),
+      metadata: {
+        moderationId: result.id,
+        confidence: result.confidence,
+        categories: result.categories,
+        processingTime: result.processingTime,
+      }
+    }
+  }
+}
+
+// Also export the main pipeline
+export const contentModerator = ContentModerationPipeline
+
 // Extend Prisma schema for moderation results (this would go in schema.prisma)
 /*
 model ModerationResult {

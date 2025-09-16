@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createTRPCRouter, publicProcedure } from '@/server/api/trpc';
 import { TrendingAnalyzer } from '@/lib/news/trending';
 import { NewsClient } from '@/lib/news/client';
+import { cache, withCache } from '@/lib/cache/redis-cache';
 
 // Validation schemas based on API contracts
 const TrendsQuerySchema = z.object({

@@ -1,7 +1,10 @@
 import { z } from 'zod';
-import { createTRPCRouter, publicProcedure, protectedProcedure } from '@/server/api/trpc';
+import { createTRPCRouter, publicProcedure, protectedProcedure, subscriptionProcedure } from '@/server/api/trpc';
 import { FeedRanking } from '@/lib/feed/ranking';
 import { ContentSafetyModeration } from '@/lib/safety/moderation';
+import { observable } from '@trpc/server/observable';
+import { TRPCError } from '@trpc/server';
+import { cache, withCache } from '@/lib/cache/redis-cache';
 
 // Validation schemas based on API contracts
 const PostCreateSchema = z.object({
@@ -24,6 +27,58 @@ const InteractionSchema = z.object({
 });
 
 export const socialRouter = createTRPCRouter({
+  // Real-time feed subscription
+  feedUpdates: subscriptionProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        feedType: z.enum(['following', 'discover', 'hybrid']).default('hybrid'),
+      })
+    )
+    .subscription(({ ctx, input }) => {
+      return observable<{ type: string; data: any }>((emit) => {
+        const onFeedUpdate = (data: any) => {
+          if (!input.userId || data.userId === input.userId) {
+            emit.next({ type: 'feedUpdate', data });
+          }
+        };
+
+        const onNewPost = (data: any) => {
+          emit.next({ type: 'newPost', data });
+        };
+
+        ctx.eventEmitter.on('feedUpdate', onFeedUpdate);
+        ctx.eventEmitter.on('newPost', onNewPost);
+
+        return () => {
+          ctx.eventEmitter.off('feedUpdate', onFeedUpdate);
+          ctx.eventEmitter.off('newPost', onNewPost);
+        };
+      });
+    }),
+
+  // Real-time conversation updates
+  conversationUpdates: subscriptionProcedure
+    .input(
+      z.object({
+        conversationId: z.string(),
+      })
+    )
+    .subscription(({ ctx, input }) => {
+      return observable<{ type: string; data: any }>((emit) => {
+        const onNewMessage = (data: any) => {
+          if (data.conversationId === input.conversationId) {
+            emit.next({ type: 'newMessage', data });
+          }
+        };
+
+        ctx.eventEmitter.on('newMessage', onNewMessage);
+
+        return () => {
+          ctx.eventEmitter.off('newMessage', onNewMessage);
+        };
+      });
+    }),
   // Get paginated feed posts with hybrid ranking
   posts: createTRPCRouter({
     getAll: publicProcedure
